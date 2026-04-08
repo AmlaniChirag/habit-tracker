@@ -37,13 +37,19 @@ export default function Heatmap({ habits, completions, today }) {
 
   return (
     <div>
-      <div className="flex items-start gap-1 overflow-x-auto pb-1">
+      <div className="flex items-start gap-[3px] overflow-x-auto pb-1 sm:gap-1">
         {columns.map((col, ci) => (
-          <div key={ci} className="flex flex-col gap-1">
+          <div key={ci} className="flex flex-col gap-[3px] sm:gap-1">
             {Array.from({ length: 7 }).map((_, ri) => {
               const cell = col[ri];
               if (!cell) {
-                return <div key={ri} className="h-3 w-3 rounded-sm opacity-0" aria-hidden="true" />;
+                return (
+                  <div
+                    key={ri}
+                    className="h-3 w-3 rounded-[3px] opacity-0 sm:h-3.5 sm:w-3.5"
+                    aria-hidden="true"
+                  />
+                );
               }
               const label =
                 cell.total > 0
@@ -52,7 +58,7 @@ export default function Heatmap({ habits, completions, today }) {
               return (
                 <div
                   key={ri}
-                  className={`h-3 w-3 rounded-sm transition-colors ${intensityClass(cell.pct)}`}
+                  className={`h-3 w-3 rounded-[3px] transition-colors sm:h-3.5 sm:w-3.5 ${intensityClass(cell.pct)}`}
                   title={label}
                   aria-label={label}
                   role="img"
@@ -63,12 +69,12 @@ export default function Heatmap({ habits, completions, today }) {
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-2 text-[11px] text-muted">
+      <div className="mt-4 flex items-center gap-1.5 text-[11px] text-muted">
         <span>Less</span>
-        <span className="h-3 w-3 rounded-sm bg-neutral-200/70 dark:bg-neutral-800/70" aria-hidden="true" />
-        <span className="h-3 w-3 rounded-sm bg-accent-500/30" aria-hidden="true" />
-        <span className="h-3 w-3 rounded-sm bg-accent-500/60" aria-hidden="true" />
-        <span className="h-3 w-3 rounded-sm bg-accent-500" aria-hidden="true" />
+        <span className="h-3 w-3 rounded-[3px] bg-neutral-200/70 dark:bg-neutral-800/70" aria-hidden="true" />
+        <span className="h-3 w-3 rounded-[3px] bg-accent-500/30" aria-hidden="true" />
+        <span className="h-3 w-3 rounded-[3px] bg-accent-500/60" aria-hidden="true" />
+        <span className="h-3 w-3 rounded-[3px] bg-accent-500" aria-hidden="true" />
         <span>More</span>
       </div>
     </div>

@@ -19,8 +19,8 @@ export default function Settings({ theme, onToggleTheme, onExport, onImport }) {
   };
 
   return (
-    <div className="surface rounded-2xl p-4 sm:p-5">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted">Settings</div>
+    <div className="surface rounded-2xl p-5 sm:p-6">
+      <div className="eyebrow">Settings</div>
 
       <div className="mt-3 flex items-center justify-between">
         <div>

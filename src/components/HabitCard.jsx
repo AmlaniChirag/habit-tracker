@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function HabitCard({ habit, completed, streak, onToggle, onDelete }) {
+export default function HabitCard({ habit, completed, streak, bestStreak, onToggle, onDelete }) {
   const [pulse, setPulse] = useState(false);
 
   const handleToggle = () => {
@@ -22,8 +22,8 @@ export default function HabitCard({ habit, completed, streak, onToggle, onDelete
         'group relative rounded-2xl border p-4 sm:p-5 cursor-pointer select-none',
         'transition-all duration-200',
         completed
-          ? 'bg-accent-500/10 border-accent-500/40 dark:bg-accent-500/15 dark:border-accent-400/40'
-          : 'surface hover:border-accent-400/60 dark:hover:border-accent-400/40',
+          ? 'bg-accent-500/[0.08] border-accent-500/30 dark:bg-accent-500/[0.12] dark:border-accent-400/30'
+          : 'surface hover:border-accent-400/50 dark:hover:border-accent-400/40 hover:-translate-y-px',
         pulse ? 'animate-pulseScale' : '',
       ].join(' ')}
       role="button"
@@ -37,10 +37,10 @@ export default function HabitCard({ habit, completed, streak, onToggle, onDelete
         <div
           className={[
             'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl',
-            'transition-all duration-200',
+            'transition-all duration-300',
             completed
-              ? 'bg-accent-500 text-white shadow-md shadow-accent-500/20'
-              : 'bg-neutral-100 dark:bg-neutral-800',
+              ? 'bg-accent-500 text-white shadow-lg shadow-accent-500/25'
+              : 'bg-neutral-100 dark:bg-neutral-800/80',
           ].join(' ')}
           aria-hidden="true"
         >
@@ -48,17 +48,26 @@ export default function HabitCard({ habit, completed, streak, onToggle, onDelete
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-medium sm:text-lg">{habit.name}</div>
-          <div className="mt-0.5 flex items-center gap-2 text-xs text-muted">
-            <span aria-label={`${streak} day streak`}>
-              {streak > 0 ? (
-                <>
-                  <span aria-hidden="true">🔥</span> {streak} day{streak === 1 ? '' : 's'}
-                </>
-              ) : (
-                'No streak yet'
-              )}
-            </span>
+          <div className="truncate text-[15px] font-medium sm:text-base leading-tight">
+            {habit.name}
+          </div>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            {streak > 0 ? (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-600 dark:bg-orange-500/15 dark:text-orange-400 tabular"
+                aria-label={`${streak} day streak`}
+              >
+                <span aria-hidden="true">🔥</span>
+                {streak} day{streak === 1 ? '' : 's'}
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted">No streak yet</span>
+            )}
+            {bestStreak > streak && bestStreak > 0 && (
+              <span className="text-[11px] text-muted tabular" title="Best streak">
+                · best {bestStreak}
+              </span>
+            )}
           </div>
         </div>
 
@@ -68,7 +77,7 @@ export default function HabitCard({ habit, completed, streak, onToggle, onDelete
             'transition-all duration-200',
             completed
               ? 'border-accent-500 bg-accent-500 text-white'
-              : 'border-neutral-300 dark:border-neutral-700',
+              : 'border-neutral-300 dark:border-neutral-700 group-hover:border-accent-400',
           ].join(' ')}
           aria-hidden="true"
         >
@@ -95,7 +104,7 @@ export default function HabitCard({ habit, completed, streak, onToggle, onDelete
           e.stopPropagation();
           onDelete(habit);
         }}
-        className="absolute right-2 top-2 hidden rounded-md p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-red-500 group-hover:block dark:hover:bg-neutral-800"
+        className="absolute right-2.5 top-2.5 hidden rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-red-500 group-hover:block dark:hover:bg-neutral-800"
         aria-label={`Delete habit ${habit.name}`}
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
