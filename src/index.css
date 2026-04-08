@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-neutral-50 text-neutral-900 antialiased;
+    @apply transition-colors duration-300;
+  }
+  .dark body {
+    @apply bg-neutral-950 text-neutral-100;
+  }
+  button {
+    @apply transition-all duration-200;
+  }
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent-500 ring-offset-2 ring-offset-neutral-50;
+  }
+  .dark *:focus-visible {
+    @apply ring-offset-neutral-950;
+  }
+}
+
+@layer utilities {
+  .surface {
+    @apply bg-white border border-neutral-200;
+  }
+  .dark .surface {
+    @apply bg-neutral-900 border-neutral-800;
+  }
+  .surface-muted {
+    @apply bg-neutral-100 border border-neutral-200;
+  }
+  .dark .surface-muted {
+    @apply bg-neutral-900/60 border-neutral-800;
+  }
+  .text-muted {
+    @apply text-neutral-500;
+  }
+  .dark .text-muted {
+    @apply text-neutral-400;
+  }
+}
