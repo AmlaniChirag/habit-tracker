@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -51,7 +51,13 @@ export default function TrendChart({ habits, completions, today, theme }) {
   return (
     <div className="h-48 w-full">
       <ResponsiveContainer>
-        <LineChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+          <defs>
+            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
+              <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+            </linearGradient>
+          </defs>
           <CartesianGrid stroke={gridColor} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -68,6 +74,7 @@ export default function TrendChart({ habits, completions, today, theme }) {
             tickLine={false}
             axisLine={{ stroke: gridColor }}
             tickFormatter={(v) => `${v}%`}
+            width={42}
           />
           <Tooltip
             cursor={{ stroke: '#6366f1', strokeOpacity: 0.2 }}
@@ -76,20 +83,22 @@ export default function TrendChart({ habits, completions, today, theme }) {
               border: `1px solid ${gridColor}`,
               borderRadius: 12,
               fontSize: 12,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
             }}
             labelStyle={{ color: axisColor }}
             formatter={(value) => [`${value}%`, '7-day avg']}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="avg"
             stroke="#6366f1"
-            strokeWidth={2}
+            strokeWidth={2.25}
+            fill="url(#trendFill)"
             dot={false}
-            activeDot={{ r: 4 }}
+            activeDot={{ r: 4, strokeWidth: 2, stroke: isDark ? '#0a0a0a' : '#ffffff' }}
             isAnimationActive={false}
           />
-        </LineChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

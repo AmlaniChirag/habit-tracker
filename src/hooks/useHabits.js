@@ -133,6 +133,27 @@ export function computeStreak(habitId, completions, today) {
   return streak;
 }
 
+/**
+ * Longest consecutive-day run for a habit across all recorded history.
+ */
+export function computeBestStreak(habitId, completions) {
+  const dates = Object.keys(completions)
+    .filter((d) => completions[d].includes(habitId))
+    .sort();
+  if (dates.length === 0) return 0;
+  let best = 1;
+  let run = 1;
+  for (let i = 1; i < dates.length; i++) {
+    if (addDays(dates[i - 1], 1) === dates[i]) {
+      run += 1;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
 export default function useHabits() {
   const [state, setState] = useState(loadState);
   const [today, setToday] = useState(() => toISODate());
@@ -292,11 +313,27 @@ export default function useHabits() {
     return out;
   }, [state.habits, state.completions, today]);
 
+  const bestStreaks = useMemo(() => {
+    const out = {};
+    for (const h of state.habits) {
+      out[h.id] = computeBestStreak(h.id, state.completions);
+    }
+    return out;
+  }, [state.habits, state.completions]);
+
+  const totalCheckIns = useMemo(() => {
+    let total = 0;
+    for (const ids of Object.values(state.completions)) total += ids.length;
+    return total;
+  }, [state.completions]);
+
   return {
     state,
     today,
     todayCompletions,
     streaks,
+    bestStreaks,
+    totalCheckIns,
     addHabit,
     deleteHabit,
     toggleCompletion,
