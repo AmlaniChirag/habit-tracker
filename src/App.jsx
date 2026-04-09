@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import useHabits, { HABIT_LIMIT, fromISODate } from './hooks/useHabits.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import useHabits, { HABIT_LIMIT, addDays, fromISODate } from './hooks/useHabits.js';
 import HabitCard from './components/HabitCard.jsx';
 import AddHabitModal from './components/AddHabitModal.jsx';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.jsx';
@@ -9,6 +9,8 @@ import TrendChart from './components/TrendChart.jsx';
 import WeeklySummary from './components/WeeklySummary.jsx';
 import Settings from './components/Settings.jsx';
 import ProgressRing from './components/ProgressRing.jsx';
+import Toast from './components/Toast.jsx';
+import ShortcutsOverlay from './components/ShortcutsOverlay.jsx';
 
 const ENCOURAGEMENTS = [
   'Pick one to start the day.',
@@ -16,6 +18,8 @@ const ENCOURAGEMENTS = [
   "What's one thing you can do now?",
   'Tiny steps, big change.',
 ];
+
+const STREAK_MILESTONES = [7, 14, 30, 60, 100, 365];
 
 function formatPrettyDate(iso) {
   const dt = fromISODate(iso);
@@ -48,6 +52,8 @@ export default function App() {
     totalCheckIns,
     addHabit,
     deleteHabit,
+    restoreHabit,
+    reorderHabit,
     toggleCompletion,
     toggleTheme,
     exportData,
@@ -56,8 +62,14 @@ export default function App() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastIdRef = useRef(0);
 
   const { habits, completions, settings } = state;
+
+  const yesterday = useMemo(() => addDays(today, -1), [today]);
+  const yesterdayCompletions = completions[yesterday] || [];
 
   const doneCount = todayCompletions.filter((id) =>
     habits.some((h) => h.id === id)
@@ -80,6 +92,135 @@ export default function App() {
     const dt = fromISODate(earliest);
     return dt.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
   }, [habits]);
+
+  // --- Toasts --------------------------------------------------------------
+  const showToast = useCallback((message, options = {}) => {
+    toastIdRef.current += 1;
+    setToast({
+      id: toastIdRef.current,
+      message,
+      action: options.action,
+      duration: options.duration,
+    });
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToast((curr) => (curr && curr.id === id ? null : curr));
+  }, []);
+
+  // --- Milestone detection -------------------------------------------------
+  const prevStreaksRef = useRef(null);
+  useEffect(() => {
+    if (prevStreaksRef.current === null) {
+      prevStreaksRef.current = { ...streaks };
+      return;
+    }
+    const prev = prevStreaksRef.current;
+    for (const h of habits) {
+      const before = prev[h.id] ?? 0;
+      const after = streaks[h.id] || 0;
+      if (after > before && STREAK_MILESTONES.includes(after)) {
+        showToast(`🎉 ${after}-day streak on ${h.emoji} ${h.name}!`, { duration: 6000 });
+      }
+    }
+    prevStreaksRef.current = { ...streaks };
+  }, [streaks, habits, showToast]);
+
+  const prevPerfectRef = useRef(null);
+  useEffect(() => {
+    if (prevPerfectRef.current === null) {
+      prevPerfectRef.current = isPerfectDay;
+      return;
+    }
+    if (isPerfectDay && !prevPerfectRef.current) {
+      showToast('✨ Perfect day — all habits done!', { duration: 5000 });
+    }
+    prevPerfectRef.current = isPerfectDay;
+  }, [isPerfectDay, showToast]);
+
+  // --- Actions -------------------------------------------------------------
+  const handleDelete = useCallback(
+    (id) => {
+      const snapshot = deleteHabit(id);
+      if (!snapshot) return;
+      showToast(`Deleted ${snapshot.habit.emoji} ${snapshot.habit.name}`, {
+        action: {
+          label: 'Undo',
+          onClick: () => restoreHabit(snapshot),
+        },
+        duration: 6000,
+      });
+    },
+    [deleteHabit, restoreHabit, showToast]
+  );
+
+  const handleToggleYesterday = useCallback(
+    (id) => {
+      toggleCompletion(id, yesterday);
+      const habit = habits.find((h) => h.id === id);
+      if (habit) {
+        const wasCompleted = yesterdayCompletions.includes(id);
+        showToast(
+          wasCompleted
+            ? `Removed yesterday's ${habit.name}`
+            : `Marked ${habit.name} done for yesterday`,
+          { duration: 3500 }
+        );
+      }
+    },
+    [toggleCompletion, yesterday, yesterdayCompletions, habits, showToast]
+  );
+
+  // --- Keyboard shortcuts --------------------------------------------------
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target;
+      // Ignore when typing in a form field.
+      if (
+        t instanceof HTMLInputElement ||
+        t instanceof HTMLTextAreaElement ||
+        t instanceof HTMLSelectElement ||
+        (t && t.isContentEditable)
+      ) {
+        return;
+      }
+      // Ignore when a modal is open (except ? to show help).
+      const modalOpen = addOpen || deleteTarget || shortcutsOpen;
+
+      if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
+        return;
+      }
+
+      if (modalOpen) return;
+
+      if (e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (habits[idx]) {
+          e.preventDefault();
+          toggleCompletion(habits[idx].id);
+        }
+        return;
+      }
+
+      if (e.key === 'n' || e.key === 'N') {
+        if (!atLimit) {
+          e.preventDefault();
+          setAddOpen(true);
+        }
+        return;
+      }
+
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        toggleTheme();
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [habits, addOpen, deleteTarget, shortcutsOpen, atLimit, toggleCompletion, toggleTheme]);
 
   return (
     <div className="min-h-screen">
@@ -113,22 +254,33 @@ export default function App() {
               </h1>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="shrink-0 rounded-xl border border-neutral-200/80 bg-white/60 p-2 text-sm hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:bg-neutral-800"
-            aria-label={`Switch to ${settings.theme === 'dark' ? 'light' : 'dark'} theme`}
-          >
-            {settings.theme === 'dark' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path d="M10 2a.75.75 0 01.75.75V4a.75.75 0 01-1.5 0V2.75A.75.75 0 0110 2zM10 15a.75.75 0 01.75.75V17a.75.75 0 01-1.5 0v-1.25A.75.75 0 0110 15zM4.5 10a.75.75 0 01-.75.75H2.5a.75.75 0 010-1.5h1.25A.75.75 0 014.5 10zM18 10a.75.75 0 01-.75.75H16a.75.75 0 010-1.5h1.25A.75.75 0 0118 10zM5.05 5.05a.75.75 0 011.06 0l.88.88a.75.75 0 01-1.06 1.06l-.88-.88a.75.75 0 010-1.06zM13.01 13.01a.75.75 0 011.06 0l.88.88a.75.75 0 11-1.06 1.06l-.88-.88a.75.75 0 010-1.06zM5.05 14.95a.75.75 0 010-1.06l.88-.88a.75.75 0 011.06 1.06l-.88.88a.75.75 0 01-1.06 0zM13.01 6.99a.75.75 0 010-1.06l.88-.88a.75.75 0 111.06 1.06l-.88.88a.75.75 0 01-1.06 0zM10 6a4 4 0 100 8 4 4 0 000-8z" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                <path d="M7.455 2.004a.75.75 0 01.26.77 7 7 0 009.958 7.967.75.75 0 011.067.853A8.5 8.5 0 116.647 1.921a.75.75 0 01.808.083z" />
-              </svg>
-            )}
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShortcutsOpen(true)}
+              className="hidden rounded-xl border border-neutral-200/80 bg-white/60 px-2.5 py-2 text-xs font-medium text-muted hover:bg-neutral-100 sm:inline-flex dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:bg-neutral-800"
+              aria-label="Show keyboard shortcuts"
+              title="Keyboard shortcuts"
+            >
+              <kbd className="font-mono">?</kbd>
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="rounded-xl border border-neutral-200/80 bg-white/60 p-2 text-sm hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:bg-neutral-800"
+              aria-label={`Switch to ${settings.theme === 'dark' ? 'light' : 'dark'} theme`}
+            >
+              {settings.theme === 'dark' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path d="M10 2a.75.75 0 01.75.75V4a.75.75 0 01-1.5 0V2.75A.75.75 0 0110 2zM10 15a.75.75 0 01.75.75V17a.75.75 0 01-1.5 0v-1.25A.75.75 0 0110 15zM4.5 10a.75.75 0 01-.75.75H2.5a.75.75 0 010-1.5h1.25A.75.75 0 014.5 10zM18 10a.75.75 0 01-.75.75H16a.75.75 0 010-1.5h1.25A.75.75 0 0118 10zM5.05 5.05a.75.75 0 011.06 0l.88.88a.75.75 0 01-1.06 1.06l-.88-.88a.75.75 0 010-1.06zM13.01 13.01a.75.75 0 011.06 0l.88.88a.75.75 0 11-1.06 1.06l-.88-.88a.75.75 0 010-1.06zM5.05 14.95a.75.75 0 010-1.06l.88-.88a.75.75 0 011.06 1.06l-.88.88a.75.75 0 01-1.06 0zM13.01 6.99a.75.75 0 010-1.06l.88-.88a.75.75 0 111.06 1.06l-.88.88a.75.75 0 01-1.06 0zM10 6a4 4 0 100 8 4 4 0 000-8z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                  <path d="M7.455 2.004a.75.75 0 01.26.77 7 7 0 009.958 7.967.75.75 0 011.067.853A8.5 8.5 0 116.647 1.921a.75.75 0 01.808.083z" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Mobile progress bar */}
@@ -181,15 +333,21 @@ export default function App() {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {habits.map((h) => (
+                {habits.map((h, i) => (
                   <HabitCard
                     key={h.id}
                     habit={h}
+                    index={i}
                     completed={todayCompletions.includes(h.id)}
+                    completedYesterday={yesterdayCompletions.includes(h.id)}
+                    canMoveUp={i > 0}
+                    canMoveDown={i < habits.length - 1}
                     streak={streaks[h.id] || 0}
                     bestStreak={bestStreaks[h.id] || 0}
                     onToggle={(id) => toggleCompletion(id)}
+                    onToggleYesterday={handleToggleYesterday}
                     onDelete={(habit) => setDeleteTarget(habit)}
+                    onMove={reorderHabit}
                   />
                 ))}
 
@@ -276,6 +434,14 @@ export default function App() {
                   <span>since {memberSince}</span>
                 </>
               )}
+              <span className="opacity-40">·</span>
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(true)}
+                className="underline-offset-2 hover:underline"
+              >
+                keyboard shortcuts
+              </button>
             </div>
           </footer>
         )}
@@ -291,10 +457,14 @@ export default function App() {
         habit={deleteTarget}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={(id) => {
-          deleteHabit(id);
           setDeleteTarget(null);
+          handleDelete(id);
         }}
       />
+
+      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      <Toast toast={toast} onDismiss={dismissToast} />
     </div>
   );
 }

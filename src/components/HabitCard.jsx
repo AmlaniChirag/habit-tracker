@@ -1,6 +1,19 @@
 import { useState } from 'react';
 
-export default function HabitCard({ habit, completed, streak, bestStreak, onToggle, onDelete }) {
+export default function HabitCard({
+  habit,
+  index,
+  completed,
+  completedYesterday,
+  canMoveUp,
+  canMoveDown,
+  streak,
+  bestStreak,
+  onToggle,
+  onToggleYesterday,
+  onDelete,
+  onMove,
+}) {
   const [pulse, setPulse] = useState(false);
 
   const handleToggle = () => {
@@ -14,6 +27,11 @@ export default function HabitCard({ habit, completed, streak, bestStreak, onTogg
       e.preventDefault();
       handleToggle();
     }
+  };
+
+  const stopAnd = (fn) => (e) => {
+    e.stopPropagation();
+    fn();
   };
 
   return (
@@ -36,7 +54,7 @@ export default function HabitCard({ habit, completed, streak, bestStreak, onTogg
       <div className="flex items-center gap-4">
         <div
           className={[
-            'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl',
+            'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl',
             'transition-all duration-300',
             completed
               ? 'bg-accent-500 text-white shadow-lg shadow-accent-500/25'
@@ -45,13 +63,26 @@ export default function HabitCard({ habit, completed, streak, bestStreak, onTogg
           aria-hidden="true"
         >
           {habit.emoji}
+          {typeof index === 'number' && index < 9 && (
+            <span
+              className={[
+                'absolute -left-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full border text-[9px] font-semibold tabular sm:flex',
+                completed
+                  ? 'border-accent-400 bg-accent-600 text-white'
+                  : 'border-neutral-300 bg-white text-neutral-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400',
+              ].join(' ')}
+              title={`Press ${index + 1} to toggle`}
+            >
+              {index + 1}
+            </span>
+          )}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-medium sm:text-base leading-tight">
             {habit.name}
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
             {streak > 0 ? (
               <span
                 className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-600 dark:bg-orange-500/15 dark:text-orange-400 tabular"
@@ -67,6 +98,16 @@ export default function HabitCard({ habit, completed, streak, bestStreak, onTogg
               <span className="text-[11px] text-muted tabular" title="Best streak">
                 · best {bestStreak}
               </span>
+            )}
+            {!completedYesterday && (
+              <button
+                type="button"
+                onClick={stopAnd(() => onToggleYesterday(habit.id))}
+                className="rounded-full border border-dashed border-neutral-300 px-2 py-0.5 text-[11px] text-muted hover:border-accent-400 hover:text-accent-600 dark:border-neutral-700 dark:hover:text-accent-400"
+                aria-label={`Mark ${habit.name} done for yesterday`}
+              >
+                + yesterday
+              </button>
             )}
           </div>
         </div>
@@ -98,12 +139,35 @@ export default function HabitCard({ habit, completed, streak, bestStreak, onTogg
         </div>
       </div>
 
+      {/* Hover controls: reorder on left, delete on right */}
+      <div className="absolute left-2 top-2 hidden flex-col gap-0.5 group-hover:flex">
+        <button
+          type="button"
+          onClick={stopAnd(() => onMove(habit.id, -1))}
+          disabled={!canMoveUp}
+          className="rounded-md p-0.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+          aria-label="Move habit up"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M10 15a.75.75 0 01-.75-.75V7.56L6.3 10.53a.75.75 0 11-1.06-1.06l4.25-4.25a.75.75 0 011.06 0l4.25 4.25a.75.75 0 11-1.06 1.06L10.75 7.56v6.69A.75.75 0 0110 15z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={stopAnd(() => onMove(habit.id, 1))}
+          disabled={!canMoveDown}
+          className="rounded-md p-0.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-neutral-700 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+          aria-label="Move habit down"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+            <path fillRule="evenodd" d="M10 5a.75.75 0 01.75.75v6.69l2.95-2.97a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0l-4.25-4.25a.75.75 0 111.06-1.06l2.95 2.97V5.75A.75.75 0 0110 5z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+
       <button
         type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete(habit);
-        }}
+        onClick={stopAnd(() => onDelete(habit))}
         className="absolute right-2.5 top-2.5 hidden rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-red-500 group-hover:block dark:hover:bg-neutral-800"
         aria-label={`Delete habit ${habit.name}`}
       >
