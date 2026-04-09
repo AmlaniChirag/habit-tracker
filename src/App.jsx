@@ -21,6 +21,14 @@ const ENCOURAGEMENTS = [
 
 const STREAK_MILESTONES = [7, 14, 30, 60, 100, 365];
 
+const SECTION_ORDER = ['morning', 'afternoon', 'evening', 'anytime'];
+const SECTION_LABELS = {
+  morning: { label: 'Morning', icon: '🌅' },
+  afternoon: { label: 'Afternoon', icon: '☀️' },
+  evening: { label: 'Evening', icon: '🌙' },
+  anytime: { label: 'Anytime', icon: '∞' },
+};
+
 function formatPrettyDate(iso) {
   const dt = fromISODate(iso);
   return dt.toLocaleDateString(undefined, {
@@ -49,8 +57,11 @@ export default function App() {
     todayCompletions,
     streaks,
     bestStreaks,
+    completionRates,
+    weekProgress,
     totalCheckIns,
     addHabit,
+    updateHabit,
     deleteHabit,
     restoreHabit,
     reorderHabit,
@@ -61,6 +72,7 @@ export default function App() {
   } = useHabits();
 
   const [addOpen, setAddOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [toast, setToast] = useState(null);
@@ -85,6 +97,40 @@ export default function App() {
   }, [today]);
 
   const hasHabits = habits.length > 0;
+
+  // Group habits by time-of-day, preserving relative order within each group.
+  const grouped = useMemo(() => {
+    const buckets = { morning: [], afternoon: [], evening: [], anytime: [] };
+    for (const h of habits) {
+      const tod = SECTION_ORDER.includes(h.timeOfDay) ? h.timeOfDay : 'anytime';
+      buckets[tod].push(h);
+    }
+    return SECTION_ORDER.map((key) => ({ key, habits: buckets[key] })).filter(
+      (g) => g.habits.length > 0
+    );
+  }, [habits]);
+
+  // Flat list in visual (grouped) order — drives keyboard hotkeys 1-9.
+  const visualOrderHabits = useMemo(
+    () => grouped.flatMap((g) => g.habits),
+    [grouped]
+  );
+
+  // Only show section headers when at least one non-anytime group exists.
+  const hasNonAnytime = grouped.some((g) => g.key !== 'anytime');
+
+  // "Missed yesterday and not done today" — daily habits only, that existed yesterday.
+  const needsAttentionMap = useMemo(() => {
+    const out = {};
+    for (const h of habits) {
+      if (h.target && h.target.type === 'weekly') continue;
+      if (h.createdAt > yesterday) continue;
+      const missedYesterday = !yesterdayCompletions.includes(h.id);
+      const notDoneToday = !todayCompletions.includes(h.id);
+      out[h.id] = missedYesterday && notDoneToday;
+    }
+    return out;
+  }, [habits, yesterday, yesterdayCompletions, todayCompletions]);
 
   const memberSince = useMemo(() => {
     if (habits.length === 0) return null;
@@ -197,9 +243,9 @@ export default function App() {
 
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
-        if (habits[idx]) {
+        if (visualOrderHabits[idx]) {
           e.preventDefault();
-          toggleCompletion(habits[idx].id);
+          toggleCompletion(visualOrderHabits[idx].id);
         }
         return;
       }
@@ -220,7 +266,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [habits, addOpen, deleteTarget, shortcutsOpen, atLimit, toggleCompletion, toggleTheme]);
+  }, [visualOrderHabits, addOpen, deleteTarget, shortcutsOpen, atLimit, toggleCompletion, toggleTheme]);
 
   return (
     <div className="min-h-screen">
@@ -332,24 +378,52 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {habits.map((h, i) => (
-                  <HabitCard
-                    key={h.id}
-                    habit={h}
-                    index={i}
-                    completed={todayCompletions.includes(h.id)}
-                    completedYesterday={yesterdayCompletions.includes(h.id)}
-                    canMoveUp={i > 0}
-                    canMoveDown={i < habits.length - 1}
-                    streak={streaks[h.id] || 0}
-                    bestStreak={bestStreaks[h.id] || 0}
-                    onToggle={(id) => toggleCompletion(id)}
-                    onToggleYesterday={handleToggleYesterday}
-                    onDelete={(habit) => setDeleteTarget(habit)}
-                    onMove={reorderHabit}
-                  />
-                ))}
+              <div className="space-y-4">
+                {(() => {
+                  let globalIdx = -1;
+                  return grouped.map((group) => (
+                    <div key={group.key} className="space-y-2.5">
+                      {hasNonAnytime && (
+                        <div className="flex items-center gap-2 px-1 pt-1">
+                          <span className="text-sm" aria-hidden="true">
+                            {SECTION_LABELS[group.key].icon}
+                          </span>
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                            {SECTION_LABELS[group.key].label}
+                          </span>
+                          <span className="text-[11px] text-muted tabular">
+                            · {group.habits.filter((h) => todayCompletions.includes(h.id)).length}/
+                            {group.habits.length}
+                          </span>
+                        </div>
+                      )}
+                      {group.habits.map((h, localIdx) => {
+                        globalIdx += 1;
+                        return (
+                          <HabitCard
+                            key={h.id}
+                            habit={h}
+                            index={globalIdx}
+                            completed={todayCompletions.includes(h.id)}
+                            completedYesterday={yesterdayCompletions.includes(h.id)}
+                            canMoveUp={localIdx > 0}
+                            canMoveDown={localIdx < group.habits.length - 1}
+                            streak={streaks[h.id] || 0}
+                            bestStreak={bestStreaks[h.id] || 0}
+                            completionRate={completionRates[h.id]}
+                            weekProgress={weekProgress[h.id]}
+                            needsAttention={!!needsAttentionMap[h.id]}
+                            onToggle={(id) => toggleCompletion(id)}
+                            onToggleYesterday={handleToggleYesterday}
+                            onEdit={setEditingHabit}
+                            onDelete={(habit) => setDeleteTarget(habit)}
+                            onMove={reorderHabit}
+                          />
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
 
                 {doneCount === 0 && (
                   <div className="rounded-xl border border-dashed border-neutral-300 px-4 py-3 text-center text-xs text-muted dark:border-neutral-700">
@@ -448,9 +522,14 @@ export default function App() {
       </main>
 
       <AddHabitModal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
+        open={addOpen || !!editingHabit}
+        editing={editingHabit}
+        onClose={() => {
+          setAddOpen(false);
+          setEditingHabit(null);
+        }}
         onAdd={addHabit}
+        onUpdate={updateHabit}
       />
 
       <ConfirmDeleteModal

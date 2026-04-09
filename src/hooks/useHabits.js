@@ -4,6 +4,7 @@ const STORAGE_KEY = 'habit-tracker-data';
 export const HABIT_LIMIT = 10;
 export const DEFAULT_EMOJI = '✅';
 export const MAX_NAME_LENGTH = 30;
+export const TIME_OF_DAY_OPTIONS = ['morning', 'afternoon', 'evening', 'anytime'];
 
 export const EMPTY_STATE = Object.freeze({
   habits: [],
@@ -70,6 +71,15 @@ function validateState(data) {
       name: h.name.slice(0, MAX_NAME_LENGTH),
       emoji: typeof h.emoji === 'string' && h.emoji ? h.emoji : DEFAULT_EMOJI,
       createdAt: typeof h.createdAt === 'string' ? h.createdAt : toISODate(),
+      timeOfDay: TIME_OF_DAY_OPTIONS.includes(h.timeOfDay) ? h.timeOfDay : 'anytime',
+      target:
+        h.target &&
+        h.target.type === 'weekly' &&
+        Number.isInteger(h.target.count) &&
+        h.target.count >= 1 &&
+        h.target.count <= 7
+          ? { type: 'weekly', count: h.target.count }
+          : { type: 'daily' },
     });
   }
 
@@ -129,6 +139,76 @@ export function computeStreak(habitId, completions, today) {
   while (completions[cursor] && completions[cursor].includes(habitId)) {
     streak += 1;
     cursor = addDays(cursor, -1);
+  }
+  return streak;
+}
+
+/**
+ * ISO date for the Monday of the week containing the given ISO date.
+ */
+export function startOfWeek(iso) {
+  const dt = fromISODate(iso);
+  const day = dt.getDay(); // 0=Sun..6=Sat
+  const offset = day === 0 ? -6 : 1 - day; // shift to Monday
+  dt.setDate(dt.getDate() + offset);
+  return toISODate(dt);
+}
+
+/**
+ * Number of days in the week containing `anyIsoInWeek` where `habitId`
+ * was completed.
+ */
+export function weekCompletionCount(habitId, completions, anyIsoInWeek) {
+  const start = startOfWeek(anyIsoInWeek);
+  let count = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(start, i);
+    if ((completions[d] || []).includes(habitId)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * 0..1 completion rate for a habit across the last `windowDays` days.
+ * Days before the habit was created don't count toward the denominator.
+ * Returns null if the habit has no qualifying days yet.
+ */
+export function computeCompletionRate(habit, completions, today, windowDays = 30) {
+  const start = addDays(today, -(windowDays - 1));
+  let possible = 0;
+  let done = 0;
+  for (let i = 0; i < windowDays; i++) {
+    const d = addDays(start, i);
+    if (habit.createdAt > d) continue;
+    possible += 1;
+    if ((completions[d] || []).includes(habit.id)) done += 1;
+  }
+  if (possible === 0) return null;
+  return done / possible;
+}
+
+/**
+ * Consecutive weeks (ending with the current week) where the habit met its
+ * weekly target. If the current week's target isn't yet met, it doesn't
+ * count but the streak still includes prior weeks.
+ */
+export function computeWeeklyGoalStreak(habit, completions, today) {
+  let streak = 0;
+  const currentWeek = startOfWeek(today);
+  const currCount = weekCompletionCount(habit.id, completions, currentWeek);
+  if (currCount >= habit.target.count) {
+    streak = 1;
+  }
+  let weekIso = addDays(currentWeek, -7);
+  const createdWeek = startOfWeek(habit.createdAt);
+  while (weekIso >= createdWeek) {
+    const count = weekCompletionCount(habit.id, completions, weekIso);
+    if (count >= habit.target.count) {
+      streak += 1;
+      weekIso = addDays(weekIso, -7);
+    } else {
+      break;
+    }
   }
   return streak;
 }
@@ -202,18 +282,70 @@ export default function useHabits() {
     };
   }, []);
 
-  const addHabit = useCallback((name, emoji) => {
+  const addHabit = useCallback((name, emoji, options = {}) => {
     setState((prev) => {
       if (prev.habits.length >= HABIT_LIMIT) return prev;
       const trimmed = name.trim().slice(0, MAX_NAME_LENGTH);
       if (!trimmed) return prev;
+      const timeOfDay = TIME_OF_DAY_OPTIONS.includes(options.timeOfDay)
+        ? options.timeOfDay
+        : 'anytime';
+      let target = { type: 'daily' };
+      if (
+        options.target &&
+        options.target.type === 'weekly' &&
+        Number.isInteger(options.target.count) &&
+        options.target.count >= 1 &&
+        options.target.count <= 7
+      ) {
+        target = { type: 'weekly', count: options.target.count };
+      }
       const newHabit = {
         id: uuid(),
         name: trimmed,
         emoji: emoji && emoji.trim() ? emoji.trim() : DEFAULT_EMOJI,
         createdAt: toISODate(),
+        timeOfDay,
+        target,
       };
       return { ...prev, habits: [...prev.habits, newHabit] };
+    });
+  }, []);
+
+  /**
+   * Patch an existing habit in place. Only known fields are applied and
+   * values are validated the same way as `addHabit`.
+   */
+  const updateHabit = useCallback((id, updates) => {
+    setState((prev) => {
+      const habits = prev.habits.map((h) => {
+        if (h.id !== id) return h;
+        const next = { ...h };
+        if (typeof updates.name === 'string') {
+          const trimmed = updates.name.trim().slice(0, MAX_NAME_LENGTH);
+          if (trimmed) next.name = trimmed;
+        }
+        if (typeof updates.emoji === 'string' && updates.emoji.trim()) {
+          next.emoji = updates.emoji.trim();
+        }
+        if (TIME_OF_DAY_OPTIONS.includes(updates.timeOfDay)) {
+          next.timeOfDay = updates.timeOfDay;
+        }
+        if (updates.target) {
+          if (updates.target.type === 'daily') {
+            next.target = { type: 'daily' };
+          } else if (
+            updates.target.type === 'weekly' &&
+            Number.isInteger(updates.target.count) &&
+            updates.target.count >= 1 &&
+            updates.target.count <= 7
+          ) {
+            next.target = { type: 'weekly', count: updates.target.count };
+          }
+        }
+        return next;
+      });
+      return { ...prev, habits };
     });
   }, []);
 
@@ -264,17 +396,34 @@ export default function useHabits() {
   }, []);
 
   /**
-   * Move a habit up (delta = -1) or down (delta = +1) in the ordering.
+   * Move a habit up (delta = -1) or down (delta = +1) among its neighbors
+   * in the same time-of-day group. Swaps with the nearest same-group
+   * neighbor even if other groups are interleaved in the flat array.
    */
   const reorderHabit = useCallback((id, delta) => {
     setState((prev) => {
       const idx = prev.habits.findIndex((h) => h.id === id);
       if (idx === -1) return prev;
-      const target = idx + delta;
-      if (target < 0 || target >= prev.habits.length) return prev;
+      const currTod = prev.habits[idx].timeOfDay || 'anytime';
+      let targetIdx = -1;
+      if (delta < 0) {
+        for (let i = idx - 1; i >= 0; i--) {
+          if ((prev.habits[i].timeOfDay || 'anytime') === currTod) {
+            targetIdx = i;
+            break;
+          }
+        }
+      } else {
+        for (let i = idx + 1; i < prev.habits.length; i++) {
+          if ((prev.habits[i].timeOfDay || 'anytime') === currTod) {
+            targetIdx = i;
+            break;
+          }
+        }
+      }
+      if (targetIdx === -1) return prev;
       const habits = [...prev.habits];
-      const [moved] = habits.splice(idx, 1);
-      habits.splice(target, 0, moved);
+      [habits[idx], habits[targetIdx]] = [habits[targetIdx], habits[idx]];
       return { ...prev, habits };
     });
   }, []);
@@ -363,7 +512,11 @@ export default function useHabits() {
   const streaks = useMemo(() => {
     const out = {};
     for (const h of state.habits) {
-      out[h.id] = computeStreak(h.id, state.completions, today);
+      if (h.target && h.target.type === 'weekly') {
+        out[h.id] = computeWeeklyGoalStreak(h, state.completions, today);
+      } else {
+        out[h.id] = computeStreak(h.id, state.completions, today);
+      }
     }
     return out;
   }, [state.habits, state.completions, today]);
@@ -375,6 +528,27 @@ export default function useHabits() {
     }
     return out;
   }, [state.habits, state.completions]);
+
+  const completionRates = useMemo(() => {
+    const out = {};
+    for (const h of state.habits) {
+      out[h.id] = computeCompletionRate(h, state.completions, today, 30);
+    }
+    return out;
+  }, [state.habits, state.completions, today]);
+
+  const weekProgress = useMemo(() => {
+    const out = {};
+    for (const h of state.habits) {
+      if (h.target && h.target.type === 'weekly') {
+        out[h.id] = {
+          done: weekCompletionCount(h.id, state.completions, today),
+          goal: h.target.count,
+        };
+      }
+    }
+    return out;
+  }, [state.habits, state.completions, today]);
 
   const totalCheckIns = useMemo(() => {
     let total = 0;
@@ -388,8 +562,11 @@ export default function useHabits() {
     todayCompletions,
     streaks,
     bestStreaks,
+    completionRates,
+    weekProgress,
     totalCheckIns,
     addHabit,
+    updateHabit,
     deleteHabit,
     restoreHabit,
     reorderHabit,

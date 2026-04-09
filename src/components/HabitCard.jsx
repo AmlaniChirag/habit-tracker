@@ -9,12 +9,17 @@ export default function HabitCard({
   canMoveDown,
   streak,
   bestStreak,
+  completionRate,
+  weekProgress,
+  needsAttention,
   onToggle,
   onToggleYesterday,
+  onEdit,
   onDelete,
   onMove,
 }) {
   const [pulse, setPulse] = useState(false);
+  const isWeekly = !!weekProgress;
 
   const handleToggle = () => {
     setPulse(true);
@@ -34,6 +39,8 @@ export default function HabitCard({
     fn();
   };
 
+  const ratePct = completionRate != null ? Math.round(completionRate * 100) : null;
+
   return (
     <div
       className={[
@@ -41,13 +48,15 @@ export default function HabitCard({
         'transition-all duration-200',
         completed
           ? 'bg-accent-500/[0.08] border-accent-500/30 dark:bg-accent-500/[0.12] dark:border-accent-400/30'
+          : needsAttention
+          ? 'surface !border-amber-500/50 dark:!border-amber-400/40 hover:-translate-y-px'
           : 'surface hover:border-accent-400/50 dark:hover:border-accent-400/40 hover:-translate-y-px',
         pulse ? 'animate-pulseScale' : '',
       ].join(' ')}
       role="button"
       tabIndex={0}
       aria-pressed={completed}
-      aria-label={`${habit.name}, ${completed ? 'completed today' : 'not completed today'}, current streak ${streak} days`}
+      aria-label={`${habit.name}, ${completed ? 'completed today' : 'not completed today'}, current streak ${streak}`}
       onClick={handleToggle}
       onKeyDown={handleKey}
     >
@@ -86,19 +95,60 @@ export default function HabitCard({
             {streak > 0 ? (
               <span
                 className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-600 dark:bg-orange-500/15 dark:text-orange-400 tabular"
-                aria-label={`${streak} day streak`}
+                aria-label={
+                  isWeekly
+                    ? `${streak} week streak`
+                    : `${streak} day streak`
+                }
               >
                 <span aria-hidden="true">🔥</span>
-                {streak} day{streak === 1 ? '' : 's'}
+                {streak} {isWeekly ? `wk${streak === 1 ? '' : 's'}` : `day${streak === 1 ? '' : 's'}`}
               </span>
             ) : (
               <span className="text-[11px] text-muted">No streak yet</span>
             )}
-            {bestStreak > streak && bestStreak > 0 && (
+
+            {isWeekly ? (
+              <span
+                className={[
+                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular',
+                  weekProgress.done >= weekProgress.goal
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-neutral-200/60 text-neutral-700 dark:bg-neutral-800/60 dark:text-neutral-300',
+                ].join(' ')}
+                title="This week's progress"
+              >
+                {weekProgress.done}/{weekProgress.goal} this week
+              </span>
+            ) : (
+              ratePct != null && (
+                <span
+                  className="text-[11px] text-muted tabular"
+                  title="Completion rate over the last 30 days"
+                >
+                  · 30d {ratePct}%
+                </span>
+              )
+            )}
+
+            {!isWeekly && bestStreak > streak && bestStreak > 0 && (
               <span className="text-[11px] text-muted tabular" title="Best streak">
                 · best {bestStreak}
               </span>
             )}
+
+            {needsAttention && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+                title="Don't miss twice"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+                Missed yesterday
+              </span>
+            )}
+
             {!completedYesterday && (
               <button
                 type="button"
@@ -139,7 +189,7 @@ export default function HabitCard({
         </div>
       </div>
 
-      {/* Hover controls: reorder on left, delete on right */}
+      {/* Hover controls: reorder on left, edit + delete on right */}
       <div className="absolute left-2 top-2 hidden flex-col gap-0.5 group-hover:flex">
         <button
           type="button"
@@ -165,20 +215,32 @@ export default function HabitCard({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={stopAnd(() => onDelete(habit))}
-        className="absolute right-2.5 top-2.5 hidden rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-red-500 group-hover:block dark:hover:bg-neutral-800"
-        aria-label={`Delete habit ${habit.name}`}
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-          <path
-            fillRule="evenodd"
-            d="M8.75 1.5a.75.75 0 00-.75.75V3H4.25a.75.75 0 000 1.5h.31l.78 11.74A2.25 2.25 0 007.59 18.5h4.82a2.25 2.25 0 002.25-2.26l.78-11.74h.31a.75.75 0 000-1.5H12V2.25a.75.75 0 00-.75-.75h-2.5zM9.5 3v0h1V3h-1zm-2.42 3.25a.75.75 0 011.5-.06l.4 8a.75.75 0 11-1.5.07l-.4-8.01zm5.34 0a.75.75 0 011.5.06l-.4 8.01a.75.75 0 11-1.5-.07l.4-8z"
-            clipRule="evenodd"
-          />
-        </svg>
-      </button>
+      <div className="absolute right-2 top-2 hidden gap-0.5 group-hover:flex">
+        <button
+          type="button"
+          onClick={stopAnd(() => onEdit(habit))}
+          className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-accent-600 dark:hover:bg-neutral-800 dark:hover:text-accent-400"
+          aria-label={`Edit habit ${habit.name}`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={stopAnd(() => onDelete(habit))}
+          className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-red-500 dark:hover:bg-neutral-800"
+          aria-label={`Delete habit ${habit.name}`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+            <path
+              fillRule="evenodd"
+              d="M8.75 1.5a.75.75 0 00-.75.75V3H4.25a.75.75 0 000 1.5h.31l.78 11.74A2.25 2.25 0 007.59 18.5h4.82a2.25 2.25 0 002.25-2.26l.78-11.74h.31a.75.75 0 000-1.5H12V2.25a.75.75 0 00-.75-.75h-2.5zM9.5 3v0h1V3h-1zm-2.42 3.25a.75.75 0 011.5-.06l.4 8a.75.75 0 11-1.5.07l-.4-8.01zm5.34 0a.75.75 0 011.5.06l-.4 8.01a.75.75 0 11-1.5-.07l.4-8z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
