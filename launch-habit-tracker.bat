@@ -18,9 +18,13 @@ cd /d "%PROJECT_DIR%"
 :: Switch to the correct branch
 git checkout claude/habit-tracker-app-BnWwz 2>nul
 
-:: Install dependencies if missing
+:: Pull the latest changes (ignore failures e.g. offline)
+echo Checking for updates...
+git pull origin claude/habit-tracker-app-BnWwz 2>nul
+
+:: Install dependencies if missing or if package.json changed
 if not exist "node_modules" (
-    echo Installing dependencies for the first time, please wait...
+    echo Installing dependencies, please wait...
     call npm install
 )
 
