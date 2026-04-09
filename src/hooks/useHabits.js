@@ -158,6 +158,11 @@ export default function useHabits() {
   const [state, setState] = useState(loadState);
   const [today, setToday] = useState(() => toISODate());
   const isFirstRender = useRef(true);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Persist on every change.
   useEffect(() => {
@@ -212,15 +217,65 @@ export default function useHabits() {
     });
   }, []);
 
+  /**
+   * Deletes a habit and its completion history. Returns a snapshot object
+   * the caller can pass back to `restoreHabit` to undo within a grace period.
+   */
   const deleteHabit = useCallback((id) => {
+    const prev = stateRef.current;
+    const habit = prev.habits.find((h) => h.id === id);
+    if (!habit) return null;
+    const index = prev.habits.findIndex((h) => h.id === id);
+    const dates = [];
+    for (const [date, ids] of Object.entries(prev.completions)) {
+      if (ids.includes(id)) dates.push(date);
+    }
+    const habits = prev.habits.filter((h) => h.id !== id);
+    const completions = {};
+    for (const [date, ids] of Object.entries(prev.completions)) {
+      const filtered = ids.filter((cid) => cid !== id);
+      if (filtered.length > 0) completions[date] = filtered;
+    }
+    setState({ ...prev, habits, completions });
+    return { habit, index, dates };
+  }, []);
+
+  /**
+   * Restore a previously-deleted habit from a snapshot returned by `deleteHabit`.
+   */
+  const restoreHabit = useCallback((snapshot) => {
+    if (!snapshot || !snapshot.habit) return;
     setState((prev) => {
-      const habits = prev.habits.filter((h) => h.id !== id);
-      const completions = {};
-      for (const [date, ids] of Object.entries(prev.completions)) {
-        const filtered = ids.filter((cid) => cid !== id);
-        if (filtered.length > 0) completions[date] = filtered;
+      // Ignore if the user already re-added something with the same id.
+      if (prev.habits.some((h) => h.id === snapshot.habit.id)) return prev;
+      if (prev.habits.length >= HABIT_LIMIT) return prev;
+      const habits = [...prev.habits];
+      const insertAt = Math.min(snapshot.index, habits.length);
+      habits.splice(insertAt, 0, snapshot.habit);
+      const completions = { ...prev.completions };
+      for (const date of snapshot.dates) {
+        const existing = completions[date] || [];
+        if (!existing.includes(snapshot.habit.id)) {
+          completions[date] = [...existing, snapshot.habit.id];
+        }
       }
       return { ...prev, habits, completions };
+    });
+  }, []);
+
+  /**
+   * Move a habit up (delta = -1) or down (delta = +1) in the ordering.
+   */
+  const reorderHabit = useCallback((id, delta) => {
+    setState((prev) => {
+      const idx = prev.habits.findIndex((h) => h.id === id);
+      if (idx === -1) return prev;
+      const target = idx + delta;
+      if (target < 0 || target >= prev.habits.length) return prev;
+      const habits = [...prev.habits];
+      const [moved] = habits.splice(idx, 1);
+      habits.splice(target, 0, moved);
+      return { ...prev, habits };
     });
   }, []);
 
@@ -336,6 +391,8 @@ export default function useHabits() {
     totalCheckIns,
     addHabit,
     deleteHabit,
+    restoreHabit,
+    reorderHabit,
     toggleCompletion,
     setTheme,
     toggleTheme,
