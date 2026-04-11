@@ -3,6 +3,8 @@ import useHabits, { HABIT_LIMIT, addDays, fromISODate } from './hooks/useHabits.
 import HabitCard from './components/HabitCard.jsx';
 import AddHabitModal from './components/AddHabitModal.jsx';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.jsx';
+import PastDaysModal from './components/PastDaysModal.jsx';
+import HabitDetailDrawer from './components/HabitDetailDrawer.jsx';
 import Heatmap from './components/Heatmap.jsx';
 import Sparkline from './components/Sparkline.jsx';
 import TrendChart from './components/TrendChart.jsx';
@@ -75,6 +77,8 @@ export default function App() {
   const [editingHabit, setEditingHabit] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [pastDaysOpen, setPastDaysOpen] = useState(false);
+  const [detailHabit, setDetailHabit] = useState(null);
   const [toast, setToast] = useState(null);
   const toastIdRef = useRef(0);
 
@@ -118,6 +122,17 @@ export default function App() {
 
   // Only show section headers when at least one non-anytime group exists.
   const hasNonAnytime = grouped.some((g) => g.key !== 'anytime');
+
+  // Keep the open detail drawer fresh if the underlying habit is edited or deleted.
+  const liveDetailHabit = useMemo(() => {
+    if (!detailHabit) return null;
+    return habits.find((h) => h.id === detailHabit.id) || null;
+  }, [detailHabit, habits]);
+
+  // If the focused habit disappears (e.g. deleted), dismiss the drawer.
+  useEffect(() => {
+    if (detailHabit && !liveDetailHabit) setDetailHabit(null);
+  }, [detailHabit, liveDetailHabit]);
 
   // "Missed yesterday and not done today" — daily habits only, that existed yesterday.
   const needsAttentionMap = useMemo(() => {
@@ -231,7 +246,13 @@ export default function App() {
         return;
       }
       // Ignore when a modal is open (except ? to show help).
-      const modalOpen = addOpen || deleteTarget || shortcutsOpen;
+      const modalOpen =
+        addOpen ||
+        editingHabit ||
+        deleteTarget ||
+        shortcutsOpen ||
+        pastDaysOpen ||
+        detailHabit;
 
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         e.preventDefault();
@@ -266,7 +287,18 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [visualOrderHabits, addOpen, deleteTarget, shortcutsOpen, atLimit, toggleCompletion, toggleTheme]);
+  }, [
+    visualOrderHabits,
+    addOpen,
+    editingHabit,
+    deleteTarget,
+    shortcutsOpen,
+    pastDaysOpen,
+    detailHabit,
+    atLimit,
+    toggleCompletion,
+    toggleTheme,
+  ]);
 
   return (
     <div className="min-h-screen">
@@ -350,14 +382,30 @@ export default function App() {
             <SectionHeader
               eyebrow="Today"
               action={
-                hasHabits && !atLimit ? (
-                  <button
-                    type="button"
-                    onClick={() => setAddOpen(true)}
-                    className="rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-accent-500/20 hover:bg-accent-600"
-                  >
-                    + Add habit
-                  </button>
+                hasHabits ? (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPastDaysOpen(true)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white/60 px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900/60 dark:hover:bg-neutral-800"
+                      aria-label="Catch up on past days"
+                      title="Catch up on past days"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .2.08.39.22.53l3 3a.75.75 0 101.06-1.06l-2.78-2.78V5z" clipRule="evenodd" />
+                      </svg>
+                      Catch up
+                    </button>
+                    {!atLimit && (
+                      <button
+                        type="button"
+                        onClick={() => setAddOpen(true)}
+                        className="rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-medium text-white shadow-sm shadow-accent-500/20 hover:bg-accent-600"
+                      >
+                        + Add habit
+                      </button>
+                    )}
+                  </div>
                 ) : null
               }
             />
@@ -418,6 +466,7 @@ export default function App() {
                             onEdit={setEditingHabit}
                             onDelete={(habit) => setDeleteTarget(habit)}
                             onMove={reorderHabit}
+                            onOpenDetail={setDetailHabit}
                           />
                         );
                       })}
@@ -542,6 +591,23 @@ export default function App() {
       />
 
       <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      <PastDaysModal
+        open={pastDaysOpen}
+        onClose={() => setPastDaysOpen(false)}
+        habits={habits}
+        completions={completions}
+        today={today}
+        onToggle={(id, date) => toggleCompletion(id, date)}
+      />
+
+      <HabitDetailDrawer
+        habit={liveDetailHabit}
+        completions={completions}
+        today={today}
+        onClose={() => setDetailHabit(null)}
+        onToggle={(id, date) => toggleCompletion(id, date)}
+      />
 
       <Toast toast={toast} onDismiss={dismissToast} />
     </div>
