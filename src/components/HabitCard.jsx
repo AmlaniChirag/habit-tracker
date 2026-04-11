@@ -17,6 +17,7 @@ export default function HabitCard({
   onEdit,
   onDelete,
   onMove,
+  onOpenDetail,
 }) {
   const [pulse, setPulse] = useState(false);
   const isWeekly = !!weekProgress;
@@ -61,15 +62,18 @@ export default function HabitCard({
       onKeyDown={handleKey}
     >
       <div className="flex items-center gap-4">
-        <div
+        <button
+          type="button"
+          onClick={stopAnd(() => onOpenDetail && onOpenDetail(habit))}
+          aria-label={`Open details for ${habit.name}`}
           className={[
             'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl',
             'transition-all duration-300',
+            'focus:outline-none focus:ring-2 focus:ring-accent-400 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-neutral-900',
             completed
-              ? 'bg-accent-500 text-white shadow-lg shadow-accent-500/25'
-              : 'bg-neutral-100 dark:bg-neutral-800/80',
+              ? 'bg-accent-500 text-white shadow-lg shadow-accent-500/25 hover:brightness-110'
+              : 'bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800/80 dark:hover:bg-neutral-700',
           ].join(' ')}
-          aria-hidden="true"
         >
           {habit.emoji}
           {typeof index === 'number' && index < 9 && (
@@ -85,7 +89,7 @@ export default function HabitCard({
               {index + 1}
             </span>
           )}
-        </div>
+        </button>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-medium sm:text-base leading-tight">
