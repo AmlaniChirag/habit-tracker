@@ -556,6 +556,15 @@ export default function useHabits() {
     return total;
   }, [state.completions]);
 
+  /**
+   * Replace the entire state (used by Firestore sync on login).
+   * Validates the incoming data to ensure shape safety.
+   */
+  const replaceState = useCallback((data) => {
+    const validated = validateState(data);
+    if (validated) setState(validated);
+  }, []);
+
   return {
     state,
     today,
@@ -567,6 +576,7 @@ export default function useHabits() {
     totalCheckIns,
     addHabit,
     updateHabit,
+    replaceState,
     deleteHabit,
     restoreHabit,
     reorderHabit,
