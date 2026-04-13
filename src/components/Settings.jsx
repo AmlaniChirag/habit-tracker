@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-export default function Settings({ theme, onToggleTheme, onExport, onImport }) {
+export default function Settings({ theme, onToggleTheme, onExport, onImport, user, onSignOut }) {
   const fileRef = useRef(null);
   const [status, setStatus] = useState(null);
 
@@ -22,7 +22,33 @@ export default function Settings({ theme, onToggleTheme, onExport, onImport }) {
     <div className="surface rounded-2xl p-5 sm:p-6">
       <div className="eyebrow">Settings</div>
 
-      <div className="mt-3 flex items-center justify-between">
+      {user && (
+        <div className="mt-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {user.photoURL && (
+              <img
+                src={user.photoURL}
+                alt=""
+                className="h-8 w-8 rounded-full"
+                referrerPolicy="no-referrer"
+              />
+            )}
+            <div>
+              <div className="text-sm font-medium">{user.displayName}</div>
+              <div className="text-[11px] text-muted">{user.email}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onSignOut}
+            className="rounded-xl border border-neutral-200 px-3 py-1.5 text-xs font-medium text-muted hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-800"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
+
+      <div className={`${user ? 'mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800' : 'mt-3'} flex items-center justify-between`}>
         <div>
           <div className="text-sm font-medium">Theme</div>
           <div className="text-xs text-muted">Currently {theme}</div>
