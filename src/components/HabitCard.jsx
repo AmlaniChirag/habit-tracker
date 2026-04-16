@@ -25,7 +25,7 @@ export default function HabitCard({
   const [pulse, setPulse] = useState(false);
   const isWeekly = !!weekProgress;
 
-  // --- Swipe state ---
+  // --- Swipe state (mobile only) ---
   const touchStartRef = useRef(null);
   const [swipeX, setSwipeX] = useState(0);
   const [swiping, setSwiping] = useState(false);
@@ -33,7 +33,7 @@ export default function HabitCard({
 
   const handleTouchStart = (e) => {
     const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     setSwiping(true);
   };
 
@@ -49,9 +49,8 @@ export default function HabitCard({
       setSwiping(false);
       return;
     }
-    // Clamp: allow right (positive) up to 100px, left (negative) up to -100px
-    const clamped = Math.max(-100, Math.min(100, dx));
-    setSwipeX(clamped);
+    // Clamp: right up to 100px, left up to -100px
+    setSwipeX(Math.max(-100, Math.min(100, dx)));
   };
 
   const handleTouchEnd = () => {
@@ -67,7 +66,10 @@ export default function HabitCard({
     } else if (swipeX < -SWIPE_THRESHOLD) {
       // Swipe left → reveal edit/delete
       setRevealActions(true);
+    } else if (!revealActions) {
+      // Didn't swipe far enough — snap back
     } else {
+      // Was revealed, small swipe → close
       setRevealActions(false);
     }
     setSwipeX(0);
@@ -95,39 +97,44 @@ export default function HabitCard({
 
   const ratePct = completionRate != null ? Math.round(completionRate * 100) : null;
 
+  // Is the card shifted (swiping left or actions revealed)?
+  const isShifted = revealActions || swipeX < -10;
+
   return (
     <div className="relative overflow-hidden rounded-2xl">
-      {/* Swipe-left revealed actions (behind the card) */}
-      <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-2">
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onEdit(habit); setRevealActions(false); }}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-500 text-white shadow-sm"
-          aria-label={`Edit ${habit.name}`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onDelete(habit); setRevealActions(false); }}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500 text-white shadow-sm"
-          aria-label={`Delete ${habit.name}`}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-            <path
-              fillRule="evenodd"
-              d="M8.75 1.5a.75.75 0 00-.75.75V3H4.25a.75.75 0 000 1.5h.31l.78 11.74A2.25 2.25 0 007.59 18.5h4.82a2.25 2.25 0 002.25-2.26l.78-11.74h.31a.75.75 0 000-1.5H12V2.25a.75.75 0 00-.75-.75h-2.5zM9.5 3v0h1V3h-1zm-2.42 3.25a.75.75 0 011.5-.06l.4 8a.75.75 0 11-1.5.07l-.4-8.01zm5.34 0a.75.75 0 011.5.06l-.4 8.01a.75.75 0 11-1.5-.07l.4-8z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </button>
-      </div>
+      {/* Swipe-left actions — only rendered when visible */}
+      {isShifted && (
+        <div className="absolute inset-y-0 right-0 z-0 flex items-center gap-1 pr-2">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onEdit(habit); setRevealActions(false); }}
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-500 text-white shadow-sm"
+            aria-label={`Edit ${habit.name}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onDelete(habit); setRevealActions(false); }}
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500 text-white shadow-sm"
+            aria-label={`Delete ${habit.name}`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+              <path
+                fillRule="evenodd"
+                d="M8.75 1.5a.75.75 0 00-.75.75V3H4.25a.75.75 0 000 1.5h.31l.78 11.74A2.25 2.25 0 007.59 18.5h4.82a2.25 2.25 0 002.25-2.26l.78-11.74h.31a.75.75 0 000-1.5H12V2.25a.75.75 0 00-.75-.75h-2.5zM9.5 3v0h1V3h-1zm-2.42 3.25a.75.75 0 011.5-.06l.4 8a.75.75 0 11-1.5.07l-.4-8.01zm5.34 0a.75.75 0 011.5.06l-.4 8.01a.75.75 0 11-1.5-.07l.4-8z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
 
-      {/* Swipe-right indicator (behind the card, left side) */}
+      {/* Swipe-right indicator — only during active right swipe */}
       {swipeX > 20 && (
-        <div className="absolute inset-y-0 left-0 flex items-center pl-4">
+        <div className="absolute inset-y-0 left-0 z-0 flex items-center pl-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-500 text-white">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
               <path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 011.42-1.42L8.5 12.08l6.79-6.79a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -136,12 +143,11 @@ export default function HabitCard({
         </div>
       )}
 
-      {/* Main card content — translates on swipe */}
+      {/* Main card — translates on swipe */}
       <div
         className={[
-          'group relative rounded-2xl border p-4 sm:p-5 cursor-pointer select-none',
-          'transition-all',
-          swiping ? 'duration-0' : 'duration-200',
+          'group relative z-10 rounded-2xl border p-4 sm:p-5 cursor-pointer select-none',
+          swiping ? 'transition-none' : 'transition-transform duration-200',
           completed
             ? 'bg-accent-500/[0.08] border-accent-500/30 dark:bg-accent-500/[0.12] dark:border-accent-400/30'
             : needsAttention
@@ -155,7 +161,6 @@ export default function HabitCard({
             : swipeX !== 0
             ? `translateX(${swipeX}px)`
             : undefined,
-          transition: swiping ? 'none' : undefined,
         }}
         role="button"
         tabIndex={0}
@@ -314,7 +319,7 @@ export default function HabitCard({
           </div>
         </div>
 
-        {/* Hover controls (desktop only): reorder on left, edit + delete on right */}
+        {/* Hover controls (desktop only) */}
         <div className="absolute left-2 top-2 hidden flex-col gap-0.5 group-hover:sm:flex">
           <button
             type="button"
