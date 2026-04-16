@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useHabits, { HABIT_LIMIT, addDays, fromISODate } from './hooks/useHabits.js';
 import useAuth from './hooks/useAuth.js';
 import useFirestoreSync from './hooks/useFirestoreSync.js';
+import useReminder from './hooks/useReminder.js';
 import HabitCard from './components/HabitCard.jsx';
 import AddHabitModal from './components/AddHabitModal.jsx';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.jsx';
@@ -64,6 +65,7 @@ export default function App() {
     completionRates,
     weekProgress,
     totalCheckIns,
+    currentMonthFreezeTokens,
     addHabit,
     updateHabit,
     deleteHabit,
@@ -71,6 +73,7 @@ export default function App() {
     reorderHabit,
     toggleCompletion,
     toggleTheme,
+    setReminderTime,
     exportData,
     importData,
     replaceState,
@@ -89,6 +92,14 @@ export default function App() {
   const toastIdRef = useRef(0);
 
   const { habits, completions, settings } = state;
+
+  const habitsLeftCount = habits.length - todayCompletions.filter((id) => habits.some((h) => h.id === id)).length;
+  const {
+    requestPermissionAndSetTime,
+    disableReminder,
+    notificationsSupported,
+    permissionDenied,
+  } = useReminder(settings.reminderTime, habitsLeftCount, setReminderTime);
 
   const yesterday = useMemo(() => addDays(today, -1), [today]);
   const yesterdayCompletions = completions[yesterday] || [];
@@ -153,6 +164,9 @@ export default function App() {
     return out;
   }, [habits, yesterday, yesterdayCompletions, todayCompletions]);
 
+  // Was yesterday frozen (streak freeze auto-used)?
+  const yesterdayFrozen = !!(state.freezes && state.freezes[yesterday]);
+
   const memberSince = useMemo(() => {
     if (habits.length === 0) return null;
     const earliest = habits.reduce((min, h) => (h.createdAt < min ? h.createdAt : min), habits[0].createdAt);
@@ -174,6 +188,20 @@ export default function App() {
   const dismissToast = useCallback((id) => {
     setToast((curr) => (curr && curr.id === id ? null : curr));
   }, []);
+
+  // --- Streak freeze notification ------------------------------------------
+  const prevFreezeCountRef = useRef(null);
+  useEffect(() => {
+    const freezeCount = state.freezes ? Object.keys(state.freezes).length : 0;
+    if (prevFreezeCountRef.current === null) {
+      prevFreezeCountRef.current = freezeCount;
+      return;
+    }
+    if (freezeCount > prevFreezeCountRef.current) {
+      showToast('🧊 Streak freeze used — your streaks are safe!', { duration: 5000 });
+    }
+    prevFreezeCountRef.current = freezeCount;
+  }, [state.freezes, showToast]);
 
   // --- Milestone detection -------------------------------------------------
   const prevStreaksRef = useRef(null);
@@ -358,9 +386,10 @@ export default function App() {
           <div className="flex items-center gap-4 sm:gap-5">
             {hasHabits && (
               <div className="relative hidden sm:block">
-                <ProgressRing value={progressValue} size={64} stroke={5} />
-                <div className="absolute inset-0 flex items-center justify-center text-[13px] font-semibold tabular">
-                  {Math.round(progressValue * 100)}%
+                <ProgressRing value={progressValue} size={80} stroke={5} />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xl font-bold tabular leading-none">{Math.round(progressValue * 100)}</span>
+                  <span className="text-xs font-semibold text-muted">%</span>
                 </div>
               </div>
             )}
@@ -412,16 +441,27 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile progress bar */}
+        {/* Mobile: big progress number + progress bar */}
         {hasHabits && (
           <div className="mt-5 sm:hidden">
-            <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+            <div className="flex items-end justify-center gap-1">
+              <span className="text-6xl font-bold tabular leading-none tracking-tight">
+                {Math.round(progressValue * 100)}
+              </span>
+              <span className="mb-1 text-2xl font-semibold text-muted">%</span>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
               <div
                 className="h-full rounded-full bg-accent-500 transition-all duration-500 ease-out"
                 style={{ width: `${progressValue * 100}%` }}
                 aria-hidden="true"
               />
             </div>
+            {isPerfectDay && (
+              <div className="mt-2 text-center text-sm font-medium text-accent-500">
+                Perfect day!
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -512,6 +552,7 @@ export default function App() {
                             completionRate={completionRates[h.id]}
                             weekProgress={weekProgress[h.id]}
                             needsAttention={!!needsAttentionMap[h.id]}
+                            frozen={yesterdayFrozen && !yesterdayCompletions.includes(h.id)}
                             onToggle={(id) => toggleCompletion(id)}
                             onToggleYesterday={handleToggleYesterday}
                             onEdit={setEditingHabit}
@@ -583,6 +624,12 @@ export default function App() {
               onImport={importData}
               user={user}
               onSignOut={logOut}
+              reminderTime={settings.reminderTime}
+              onReminderChange={requestPermissionAndSetTime}
+              onReminderDisable={disableReminder}
+              notificationsSupported={notificationsSupported}
+              permissionDenied={permissionDenied}
+              freezeTokens={currentMonthFreezeTokens}
             />
           </section>
         </div>
@@ -632,6 +679,7 @@ export default function App() {
         }}
         onAdd={addHabit}
         onUpdate={updateHabit}
+        existingNames={habits.map((h) => h.name)}
       />
 
       <ConfirmDeleteModal
