@@ -6,10 +6,14 @@ export const DEFAULT_EMOJI = '✅';
 export const MAX_NAME_LENGTH = 30;
 export const TIME_OF_DAY_OPTIONS = ['morning', 'afternoon', 'evening', 'anytime'];
 
+export const FREEZE_TOKENS_PER_MONTH = 2;
+
 export const EMPTY_STATE = Object.freeze({
   habits: [],
   completions: {},
-  settings: { theme: 'dark' },
+  freezes: {},          // { 'YYYY-MM-DD': true } — dates where a freeze token was auto-used
+  freezeTokens: {},     // { 'YYYY-MM': remaining } — tokens remaining per month
+  settings: { theme: 'dark', reminderTime: null }, // reminderTime: 'HH:MM' or null
 });
 
 /**
@@ -90,15 +94,44 @@ function validateState(data) {
     cleanCompletions[date] = ids.filter((id) => typeof id === 'string');
   }
 
+  // Validate freezes map
+  const cleanFreezes = {};
+  if (data.freezes && typeof data.freezes === 'object' && !Array.isArray(data.freezes)) {
+    for (const [date, val] of Object.entries(data.freezes)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date) && val === true) {
+        cleanFreezes[date] = true;
+      }
+    }
+  }
+
+  // Validate freeze tokens map
+  const cleanFreezeTokens = {};
+  if (data.freezeTokens && typeof data.freezeTokens === 'object' && !Array.isArray(data.freezeTokens)) {
+    for (const [month, count] of Object.entries(data.freezeTokens)) {
+      if (/^\d{4}-\d{2}$/.test(month) && typeof count === 'number') {
+        cleanFreezeTokens[month] = Math.max(0, Math.min(FREEZE_TOKENS_PER_MONTH, count));
+      }
+    }
+  }
+
   const theme =
     data.settings && (data.settings.theme === 'light' || data.settings.theme === 'dark')
       ? data.settings.theme
       : 'dark';
 
+  const reminderTime =
+    data.settings &&
+    typeof data.settings.reminderTime === 'string' &&
+    /^\d{2}:\d{2}$/.test(data.settings.reminderTime)
+      ? data.settings.reminderTime
+      : null;
+
   return {
     habits: cleanHabits,
     completions: cleanCompletions,
-    settings: { theme },
+    freezes: cleanFreezes,
+    freezeTokens: cleanFreezeTokens,
+    settings: { theme, reminderTime },
   };
 }
 
@@ -129,15 +162,23 @@ function saveState(state) {
  * If the habit was not completed today, the streak still counts back from
  * yesterday so the user doesn't lose their streak partway through the day.
  */
-export function computeStreak(habitId, completions, today) {
+export function computeStreak(habitId, completions, today, freezes = {}) {
   let streak = 0;
   let cursor = today;
   // If today not completed, allow streak to start from yesterday.
   if (!(completions[today] && completions[today].includes(habitId))) {
     cursor = addDays(today, -1);
   }
-  while (completions[cursor] && completions[cursor].includes(habitId)) {
-    streak += 1;
+  while (true) {
+    const completed = completions[cursor] && completions[cursor].includes(habitId);
+    const frozen = freezes[cursor] === true;
+    if (completed) {
+      streak += 1;
+    } else if (frozen && streak > 0) {
+      // Freeze preserves the streak but doesn't increment it
+    } else {
+      break;
+    }
     cursor = addDays(cursor, -1);
   }
   return streak;
@@ -504,6 +545,45 @@ export default function useHabits() {
     });
   }, []);
 
+  const setReminderTime = useCallback((time) => {
+    setState((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, reminderTime: time },
+    }));
+  }, []);
+
+  // --- Streak freeze auto-use ---
+  // On each "today" change (i.e. new day), check if yesterday was missed entirely
+  // and auto-consume a freeze token if available.
+  useEffect(() => {
+    if (isFirstRender.current) return;
+    const st = stateRef.current;
+    if (st.habits.length === 0) return;
+    const yest = addDays(today, -1);
+    const yestCompletions = st.completions[yest] || [];
+    // Only auto-freeze if at least one daily habit existed yesterday and none were completed
+    const dailyHabitsYesterday = st.habits.filter(
+      (h) => (!h.target || h.target.type === 'daily') && h.createdAt <= yest
+    );
+    if (dailyHabitsYesterday.length === 0) return;
+    const anyDoneYesterday = dailyHabitsYesterday.some((h) => yestCompletions.includes(h.id));
+    if (anyDoneYesterday) return;
+    // Already frozen?
+    if (st.freezes && st.freezes[yest]) return;
+    // Check token availability for that month
+    const month = yest.slice(0, 7); // 'YYYY-MM'
+    const tokens = st.freezeTokens && st.freezeTokens[month] != null
+      ? st.freezeTokens[month]
+      : FREEZE_TOKENS_PER_MONTH;
+    if (tokens <= 0) return;
+    // Auto-use a freeze
+    setState((prev) => ({
+      ...prev,
+      freezes: { ...prev.freezes, [yest]: true },
+      freezeTokens: { ...prev.freezeTokens, [month]: tokens - 1 },
+    }));
+  }, [today]);
+
   const todayCompletions = useMemo(
     () => state.completions[today] || [],
     [state.completions, today]
@@ -515,11 +595,11 @@ export default function useHabits() {
       if (h.target && h.target.type === 'weekly') {
         out[h.id] = computeWeeklyGoalStreak(h, state.completions, today);
       } else {
-        out[h.id] = computeStreak(h.id, state.completions, today);
+        out[h.id] = computeStreak(h.id, state.completions, today, state.freezes);
       }
     }
     return out;
-  }, [state.habits, state.completions, today]);
+  }, [state.habits, state.completions, state.freezes, today]);
 
   const bestStreaks = useMemo(() => {
     const out = {};
@@ -556,6 +636,14 @@ export default function useHabits() {
     return total;
   }, [state.completions]);
 
+  const currentMonthFreezeTokens = useMemo(() => {
+    const month = today.slice(0, 7);
+    if (state.freezeTokens && state.freezeTokens[month] != null) {
+      return state.freezeTokens[month];
+    }
+    return FREEZE_TOKENS_PER_MONTH;
+  }, [state.freezeTokens, today]);
+
   /**
    * Replace the entire state (used by Firestore sync on login).
    * Validates the incoming data to ensure shape safety.
@@ -574,6 +662,7 @@ export default function useHabits() {
     completionRates,
     weekProgress,
     totalCheckIns,
+    currentMonthFreezeTokens,
     addHabit,
     updateHabit,
     replaceState,
@@ -583,6 +672,7 @@ export default function useHabits() {
     toggleCompletion,
     setTheme,
     toggleTheme,
+    setReminderTime,
     exportData,
     importData,
   };
