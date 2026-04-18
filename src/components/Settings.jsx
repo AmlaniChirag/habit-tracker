@@ -14,6 +14,8 @@ export default function Settings({
   notificationsSupported,
   permissionDenied,
   freezeTokens,
+  canInstall,
+  onInstall,
 }) {
   const fileRef = useRef(null);
   const [status, setStatus] = useState(null);
@@ -172,6 +174,25 @@ export default function Settings({
           {theme === 'dark' ? 'Light' : 'Dark'}
         </button>
       </div>
+
+      {/* Install app */}
+      {canInstall && (
+        <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Install app</div>
+              <div className="text-xs text-muted">Add to home screen for quick access</div>
+            </div>
+            <button
+              type="button"
+              onClick={onInstall}
+              className="rounded-xl bg-accent-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-600"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 border-t border-neutral-200 pt-4 dark:border-neutral-800">
         <div className="text-sm font-medium">Backup</div>

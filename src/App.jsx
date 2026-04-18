@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import useHabits, { HABIT_LIMIT, addDays, fromISODate } from './hooks/useHabits.js';
+import useHabits, { HABIT_LIMIT, addDays, fromISODate, isHabitPaused } from './hooks/useHabits.js';
 import useAuth from './hooks/useAuth.js';
 import useFirestoreSync from './hooks/useFirestoreSync.js';
 import useReminder from './hooks/useReminder.js';
+import useInstallPrompt from './hooks/useInstallPrompt.js';
 import HabitCard from './components/HabitCard.jsx';
 import AddHabitModal from './components/AddHabitModal.jsx';
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.jsx';
 import PastDaysModal from './components/PastDaysModal.jsx';
 import HabitDetailDrawer from './components/HabitDetailDrawer.jsx';
+import NoteModal from './components/NoteModal.jsx';
+import PauseModal from './components/PauseModal.jsx';
 import Heatmap from './components/Heatmap.jsx';
 import Sparkline from './components/Sparkline.jsx';
 import TrendChart from './components/TrendChart.jsx';
@@ -74,6 +77,9 @@ export default function App() {
     toggleCompletion,
     toggleTheme,
     setReminderTime,
+    setNote,
+    pauseHabit,
+    resumeHabit,
     exportData,
     importData,
     replaceState,
@@ -88,10 +94,24 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [pastDaysOpen, setPastDaysOpen] = useState(false);
   const [detailHabit, setDetailHabit] = useState(null);
+  const [noteTarget, setNoteTarget] = useState(null); // { habit, date }
+  const [pauseTarget, setPauseTarget] = useState(null); // habit
   const [toast, setToast] = useState(null);
   const toastIdRef = useRef(0);
 
+  const { canInstall, install } = useInstallPrompt();
+
   const { habits, completions, settings } = state;
+
+  // Handle URL params: ?shortcut=add from manifest shortcut, ?add=text from share target
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('shortcut') || params.has('add')) {
+      setAddOpen(true);
+      // Clean URL without reload
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
 
   const habitsLeftCount = habits.length - todayCompletions.filter((id) => habits.some((h) => h.id === id)).length;
   const {
@@ -151,18 +171,19 @@ export default function App() {
     if (detailHabit && !liveDetailHabit) setDetailHabit(null);
   }, [detailHabit, liveDetailHabit]);
 
-  // "Missed yesterday and not done today" — daily habits only, that existed yesterday.
+  // "Missed yesterday and not done today" — daily habits only, that existed yesterday, not paused.
   const needsAttentionMap = useMemo(() => {
     const out = {};
     for (const h of habits) {
       if (h.target && h.target.type === 'weekly') continue;
       if (h.createdAt > yesterday) continue;
+      if (isHabitPaused(h.id, today, state.pauses)) continue;
       const missedYesterday = !yesterdayCompletions.includes(h.id);
       const notDoneToday = !todayCompletions.includes(h.id);
       out[h.id] = missedYesterday && notDoneToday;
     }
     return out;
-  }, [habits, yesterday, yesterdayCompletions, todayCompletions]);
+  }, [habits, yesterday, yesterdayCompletions, todayCompletions, state.pauses, today]);
 
   // Was yesterday frozen (streak freeze auto-used)?
   const yesterdayFrozen = !!(state.freezes && state.freezes[yesterday]);
@@ -247,6 +268,19 @@ export default function App() {
       });
     },
     [deleteHabit, restoreHabit, showToast]
+  );
+
+  const handleToggleToday = useCallback(
+    (id) => {
+      const wasCompleted = todayCompletions.includes(id);
+      toggleCompletion(id);
+      // On completion (not un-completion), offer a note
+      if (!wasCompleted) {
+        const habit = habits.find((h) => h.id === id);
+        if (habit) setNoteTarget({ habit, date: today });
+      }
+    },
+    [toggleCompletion, todayCompletions, habits, today]
   );
 
   const handleToggleYesterday = useCallback(
@@ -553,12 +587,15 @@ export default function App() {
                             weekProgress={weekProgress[h.id]}
                             needsAttention={!!needsAttentionMap[h.id]}
                             frozen={yesterdayFrozen && !yesterdayCompletions.includes(h.id)}
-                            onToggle={(id) => toggleCompletion(id)}
+                            paused={isHabitPaused(h.id, today, state.pauses)}
+                            todayNote={!!(state.notes?.[h.id]?.[today])}
+                            onToggle={handleToggleToday}
                             onToggleYesterday={handleToggleYesterday}
                             onEdit={setEditingHabit}
                             onDelete={(habit) => setDeleteTarget(habit)}
                             onMove={reorderHabit}
                             onOpenDetail={setDetailHabit}
+                            onPause={setPauseTarget}
                           />
                         );
                       })}
@@ -630,6 +667,8 @@ export default function App() {
               notificationsSupported={notificationsSupported}
               permissionDenied={permissionDenied}
               freezeTokens={currentMonthFreezeTokens}
+              canInstall={canInstall}
+              onInstall={install}
             />
           </section>
         </div>
@@ -705,9 +744,27 @@ export default function App() {
       <HabitDetailDrawer
         habit={liveDetailHabit}
         completions={completions}
+        notes={state.notes}
         today={today}
         onClose={() => setDetailHabit(null)}
         onToggle={(id, date) => toggleCompletion(id, date)}
+      />
+
+      <NoteModal
+        habit={noteTarget?.habit || null}
+        date={noteTarget?.date || today}
+        existingNote={noteTarget ? state.notes?.[noteTarget.habit?.id]?.[noteTarget.date] : null}
+        onSave={setNote}
+        onClose={() => setNoteTarget(null)}
+      />
+
+      <PauseModal
+        habit={pauseTarget}
+        pauses={state.pauses}
+        today={today}
+        onPause={pauseHabit}
+        onResume={resumeHabit}
+        onClose={() => setPauseTarget(null)}
       />
 
       <Toast toast={toast} onDismiss={dismissToast} />

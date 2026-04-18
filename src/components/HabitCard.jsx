@@ -15,12 +15,15 @@ export default function HabitCard({
   weekProgress,
   needsAttention,
   frozen,
+  paused,
+  todayNote,
   onToggle,
   onToggleYesterday,
   onEdit,
   onDelete,
   onMove,
   onOpenDetail,
+  onPause,
 }) {
   const [pulse, setPulse] = useState(false);
   const isWeekly = !!weekProgress;
@@ -209,18 +212,27 @@ export default function HabitCard({
           </button>
 
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[15px] font-medium sm:text-base leading-tight">
-              {habit.name}
+            <div className="flex items-center gap-1.5">
+              <div className="truncate text-[15px] font-medium sm:text-base leading-tight">
+                {habit.name}
+              </div>
+              {todayNote && (
+                <span
+                  className="inline-flex shrink-0 h-1.5 w-1.5 rounded-full bg-accent-500"
+                  title="Has a note today"
+                  aria-label="Note recorded today"
+                />
+              )}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-              {streak > 0 ? (
+              {paused ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-600 dark:text-sky-400">
+                  ⏸ On pause
+                </span>
+              ) : streak > 0 ? (
                 <span
                   className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-medium text-orange-600 dark:bg-orange-500/15 dark:text-orange-400 tabular"
-                  aria-label={
-                    isWeekly
-                      ? `${streak} week streak`
-                      : `${streak} day streak`
-                  }
+                  aria-label={isWeekly ? `${streak} week streak` : `${streak} day streak`}
                 >
                   <span aria-hidden="true">🔥</span>
                   {streak} {isWeekly ? `wk${streak === 1 ? '' : 's'}` : `day${streak === 1 ? '' : 's'}`}
@@ -346,6 +358,25 @@ export default function HabitCard({
         </div>
 
         <div className="absolute right-2 top-2 hidden gap-0.5 group-hover:sm:flex">
+          {onPause && (
+            <button
+              type="button"
+              onClick={stopAnd(() => onPause(habit))}
+              className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-200/60 hover:text-sky-500 dark:hover:bg-neutral-800"
+              aria-label={paused ? `Resume ${habit.name}` : `Pause ${habit.name}`}
+              title={paused ? 'Resume habit' : 'Pause habit'}
+            >
+              {paused ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path fillRule="evenodd" d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zm6.39-2.908a.75.75 0 01.766.027l3.5 2.25a.75.75 0 010 1.262l-3.5 2.25A.75.75 0 018 12.25v-4.5a.75.75 0 01.39-.658z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                  <path fillRule="evenodd" d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zM6.75 7.25a.75.75 0 00-.75.75v4c0 .414.336.75.75.75h.5a.75.75 0 00.75-.75V8a.75.75 0 00-.75-.75h-.5zm5 0a.75.75 0 00-.75.75v4c0 .414.336.75.75.75h.5a.75.75 0 00.75-.75V8a.75.75 0 00-.75-.75h-.5z" clipRule="evenodd" />
+                </svg>
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={stopAnd(() => onEdit(habit))}
