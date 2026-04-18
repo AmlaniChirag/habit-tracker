@@ -22,5 +22,30 @@
       "type": "image/svg+xml",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "Today's habits",
+      "short_name": "Today",
+      "description": "Check off today's habits",
+      "url": "/?shortcut=today",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Add habit",
+      "short_name": "Add",
+      "description": "Create a new habit",
+      "url": "/?shortcut=add",
+      "icons": [{ "src": "/icon.svg", "sizes": "any" }]
+    }
+  ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }

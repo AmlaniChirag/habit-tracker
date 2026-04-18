@@ -11,9 +11,11 @@ export const FREEZE_TOKENS_PER_MONTH = 2;
 export const EMPTY_STATE = Object.freeze({
   habits: [],
   completions: {},
-  freezes: {},          // { 'YYYY-MM-DD': true } — dates where a freeze token was auto-used
-  freezeTokens: {},     // { 'YYYY-MM': remaining } — tokens remaining per month
-  settings: { theme: 'dark', reminderTime: null }, // reminderTime: 'HH:MM' or null
+  freezes: {},          // { 'YYYY-MM-DD': true }
+  freezeTokens: {},     // { 'YYYY-MM': remaining }
+  notes: {},            // { habitId: { 'YYYY-MM-DD': { text, mood } } }
+  pauses: {},           // { habitId: { from: ISO, to: ISO|null } }
+  settings: { theme: 'dark', reminderTime: null },
 });
 
 /**
@@ -126,11 +128,44 @@ function validateState(data) {
       ? data.settings.reminderTime
       : null;
 
+  // Validate notes
+  const cleanNotes = {};
+  if (data.notes && typeof data.notes === 'object' && !Array.isArray(data.notes)) {
+    for (const [habitId, dateMap] of Object.entries(data.notes)) {
+      if (typeof habitId !== 'string') continue;
+      if (!dateMap || typeof dateMap !== 'object') continue;
+      cleanNotes[habitId] = {};
+      for (const [date, entry] of Object.entries(dateMap)) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+        if (!entry || typeof entry !== 'object') continue;
+        cleanNotes[habitId][date] = {
+          text: typeof entry.text === 'string' ? entry.text.slice(0, 280) : '',
+          mood: typeof entry.mood === 'string' ? entry.mood : '',
+        };
+      }
+    }
+  }
+
+  // Validate pauses
+  const cleanPauses = {};
+  if (data.pauses && typeof data.pauses === 'object' && !Array.isArray(data.pauses)) {
+    for (const [habitId, pause] of Object.entries(data.pauses)) {
+      if (typeof habitId !== 'string') continue;
+      if (!pause || typeof pause !== 'object') continue;
+      if (typeof pause.from !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(pause.from)) continue;
+      const to = pause.to === null ? null
+        : (typeof pause.to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(pause.to)) ? pause.to : null;
+      cleanPauses[habitId] = { from: pause.from, to };
+    }
+  }
+
   return {
     habits: cleanHabits,
     completions: cleanCompletions,
     freezes: cleanFreezes,
     freezeTokens: cleanFreezeTokens,
+    notes: cleanNotes,
+    pauses: cleanPauses,
     settings: { theme, reminderTime },
   };
 }
@@ -162,20 +197,34 @@ function saveState(state) {
  * If the habit was not completed today, the streak still counts back from
  * yesterday so the user doesn't lose their streak partway through the day.
  */
-export function computeStreak(habitId, completions, today, freezes = {}) {
+/**
+ * Returns true if a habit is paused on the given date.
+ */
+export function isHabitPaused(habitId, date, pauses) {
+  if (!pauses || !pauses[habitId]) return false;
+  const p = pauses[habitId];
+  if (date < p.from) return false;
+  if (p.to !== null && date > p.to) return false;
+  return true;
+}
+
+export function computeStreak(habitId, completions, today, freezes = {}, pauses = {}) {
   let streak = 0;
   let cursor = today;
-  // If today not completed, allow streak to start from yesterday.
-  if (!(completions[today] && completions[today].includes(habitId))) {
+  // If today not completed and not paused, allow streak to start from yesterday.
+  const todayDone = completions[today] && completions[today].includes(habitId);
+  const todayPaused = isHabitPaused(habitId, today, pauses);
+  if (!todayDone && !todayPaused) {
     cursor = addDays(today, -1);
   }
   while (true) {
     const completed = completions[cursor] && completions[cursor].includes(habitId);
     const frozen = freezes[cursor] === true;
+    const paused = isHabitPaused(habitId, cursor, pauses);
     if (completed) {
       streak += 1;
-    } else if (frozen && streak > 0) {
-      // Freeze preserves the streak but doesn't increment it
+    } else if ((frozen || paused) && streak > 0) {
+      // Freeze/pause preserves streak without incrementing
     } else {
       break;
     }
@@ -545,6 +594,40 @@ export default function useHabits() {
     });
   }, []);
 
+  const setNote = useCallback((habitId, date, text, mood) => {
+    setState((prev) => {
+      const habitNotes = prev.notes?.[habitId] || {};
+      if (!text && !mood) {
+        // Remove note if both empty
+        const { [date]: _removed, ...rest } = habitNotes;
+        const notes = { ...prev.notes, [habitId]: rest };
+        return { ...prev, notes };
+      }
+      const notes = {
+        ...prev.notes,
+        [habitId]: {
+          ...habitNotes,
+          [date]: { text: (text || '').slice(0, 280), mood: mood || '' },
+        },
+      };
+      return { ...prev, notes };
+    });
+  }, []);
+
+  const pauseHabit = useCallback((id, from, to) => {
+    setState((prev) => ({
+      ...prev,
+      pauses: { ...prev.pauses, [id]: { from, to: to || null } },
+    }));
+  }, []);
+
+  const resumeHabit = useCallback((id) => {
+    setState((prev) => {
+      const { [id]: _removed, ...rest } = prev.pauses || {};
+      return { ...prev, pauses: rest };
+    });
+  }, []);
+
   const setReminderTime = useCallback((time) => {
     setState((prev) => ({
       ...prev,
@@ -595,7 +678,7 @@ export default function useHabits() {
       if (h.target && h.target.type === 'weekly') {
         out[h.id] = computeWeeklyGoalStreak(h, state.completions, today);
       } else {
-        out[h.id] = computeStreak(h.id, state.completions, today, state.freezes);
+        out[h.id] = computeStreak(h.id, state.completions, today, state.freezes, state.pauses);
       }
     }
     return out;
@@ -673,6 +756,9 @@ export default function useHabits() {
     setTheme,
     toggleTheme,
     setReminderTime,
+    setNote,
+    pauseHabit,
+    resumeHabit,
     exportData,
     importData,
   };

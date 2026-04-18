@@ -18,7 +18,7 @@ function intensityClass(done) {
     : 'bg-neutral-200/70 dark:bg-neutral-800/70';
 }
 
-export default function HabitDetailDrawer({ habit, completions, today, onClose, onToggle }) {
+export default function HabitDetailDrawer({ habit, completions, notes, today, onClose, onToggle }) {
   useEffect(() => {
     if (!habit) return;
     const onKey = (e) => {
@@ -258,6 +258,38 @@ export default function HabitDetailDrawer({ habit, completions, today, onClose, 
             })}
           </div>
         </div>
+
+        {/* Notes log */}
+        {notes && notes[habit.id] && Object.keys(notes[habit.id]).length > 0 && (
+          <div className="mt-6">
+            <div className="eyebrow mb-2">Recent notes</div>
+            <ul className="space-y-2">
+              {Object.entries(notes[habit.id])
+                .sort(([a], [b]) => b.localeCompare(a))
+                .slice(0, 10)
+                .map(([date, entry]) => (
+                  <li
+                    key={date}
+                    className="flex items-start gap-2.5 rounded-xl bg-neutral-100/60 px-3 py-2.5 dark:bg-neutral-800/50"
+                  >
+                    {entry.mood && (
+                      <span className="shrink-0 text-base leading-none mt-0.5">{entry.mood}</span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {entry.text && (
+                        <div className="text-sm leading-snug">{entry.text}</div>
+                      )}
+                      <div className="mt-0.5 text-[11px] text-muted">
+                        {new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
+                          weekday: 'short', month: 'short', day: 'numeric',
+                        })}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );

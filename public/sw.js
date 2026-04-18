@@ -61,3 +61,15 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// Handle share target — GET /share-target?text=...&title=...
+// Redirect to the app with a pre-filled add-habit param.
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.pathname === '/share-target') {
+    const text = url.searchParams.get('text') || url.searchParams.get('title') || '';
+    event.respondWith(
+      Response.redirect(`/?add=${encodeURIComponent(text)}`, 302)
+    );
+  }
+});
